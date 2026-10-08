@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Карта — 08.10.2026</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+html,body { margin:0; padding:0; width:100%; height:100%; font-family:Arial,sans-serif; }
+#map { width:100%; height:100vh; }
+.info-panel { position:absolute; top:15px; left:15px; background:rgba(255,255,255,.95); padding:10px 14px; border-radius:8px; box-shadow:0 3px 14px rgba(0,0,0,.3); z-index:1000; }
+.top-buttons-container { position:absolute; top:15px; right:15px; z-index:1001; }
+.icon-btn { width:40px; height:40px; background:rgba(255,255,255,.95); border:0; border-radius:8px; box-shadow:0 3px 14px rgba(0,0,0,.3); cursor:pointer; font-size:18px; }
+.control-panel { position:absolute; top:65px; right:15px; width:300px; max-height:calc(100vh - 80px); background:rgba(255,255,255,.97); padding:12px; border-radius:8px; box-shadow:0 3px 14px rgba(0,0,0,.3); z-index:1000; display:none; flex-direction:column; box-sizing:border-box; }
+.control-panel.active { display:flex; }
+.control-panel h4 { margin:0 0 8px; color:#b30000; font-size:14px; }
+.points-list { overflow-y:auto; flex-grow:1; max-height:250px; border:1px solid #ddd; padding:6px; border-radius:4px; background:#fafafa; margin-bottom:8px; }
+.point-item { display:flex; align-items:center; font-size:12px; margin-bottom:5px; cursor:pointer; }
+.point-item input { margin-right:6px; }
+.point-item span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.panel-btns { display:flex; gap:6px; margin-bottom:6px; }
+.panel-btns button { flex:1; padding:5px; font-size:11px; font-weight:bold; border:0; border-radius:4px; cursor:pointer; }
+.delete-selected-btn { background:#ff4d4d; color:white; border:0; padding:8px; border-radius:4px; cursor:pointer; font-weight:bold; width:100%; font-size:12px; }
+.popup-content { font-size:13px; line-height:1.4; }
+.popup-content b { color:#b30000; }
+.popup-zoom-btn { background:#007bff; color:white; border:0; padding:4px 8px; border-radius:4px; cursor:pointer; font-size:11px; margin-top:6px; width:100%; }
+</style>
+</head>
+<body>
+<div class="info-panel">
+<h3 style="margin:0 0 5px;color:#b30000;">Загроза обстрілів</h3>
+<p style="margin:0;font-size:12px;">Дата: <b>08.10.2026</b></p>
+</div>
+<div class="top-buttons-container">
+<button class="icon-btn" id="lockBtn" onclick="togglePanel()" title="Керування">🔒</button>
+</div>
+<div class="control-panel" id="controlPanel">
+<h4>Керування точками</h4>
+<div class="points-list" id="pointsListContainer"></div>
+<div class="panel-btns"><button onclick="toggleSelectAll()">Вибрати все</button></div>
+<button class="delete-selected-btn" onclick="deleteSelectedPoints()">🗑️ Видалити вибрані</button>
+</div>
+<div id="map"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const encodedConfig = "eyJyZXBvIjogIm1ncnNjb252ZXJ0LWFpL21hcHMiLCAidG9rZW4iOiAiZ2hwX2NncmJlNGdIRGFydUs4M09iTjgzdDNONXJLQ0VDRDJGZDN4TyIsICJwYXNzIjogIjFxYXp6eGN2IiwgImZpbGVOYW1lIjogIm1hcF8wOF8xMF8yMDI2XzEyXzI3XzM3Lmh0bWwifQ==";
+let isAuthenticated = false;
+var map = L.map('map', {zoomControl:false}).setView([46.681822400603885,32.71360838052119],10);
+L.control.zoom({position:'bottomright'}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap contributors'}).addTo(map);
+setTimeout(function(){map.invalidateSize();},200);
+
+var custom3DPin = L.divIcon({
+    className: 'custom-3d-pin',
+    html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="40" height="40" style="filter: drop-shadow(0px 4px 6px rgba(0,0,0,0.3));">
+        <defs>
+            <radialGradient id="pinGrad" cx="35%" cy="30%" r="70%">
+                <stop offset="0%" stop-color="#ff4d4d"/>
+                <stop offset="60%" stop-color="#e60000"/>
+                <stop offset="100%" stop-color="#990000"/>
+            </radialGradient>
+        </defs>
+        <path fill="url(#pinGrad)" d="M256 0C150.13 0 64 86.13 64 192c0 110.5 168.3 282.8 175.3 289.9 3.7 3.7 8.7 5.6 13.7 5.6s10-1.9 13.7-5.6C283.7 474.8 448 302.5 448 192 448 86.13 361.87 0 256 0zm0 320c-70.69 0-128-57.31-128-128s57.31-128 128-128 128 57.31 128 128-57.31 128-128 128z"/>
+        <circle cx="256" cy="192" r="68" fill="#ffffff" opacity="0.15"/>
+    </svg>`,
+    iconSize: [40, 40],
+    iconAnchor: [20, 40],
+    popupAnchor: [0, -38]
+});
+
+var rawData = [[46.681822400603885,32.71360838052119,"газорозподільча підстанція в районі н.п. АНТОНІВКА (","36T VS 78098 69847"],[46.67142917490011,32.6582183591472,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 73857 68709"],[46.68496712589781,32.69427730700208,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 76621 70202"],[46.67655301726216,32.758325827253906,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 81516 69250"],[46.62408552553067,32.44510686214968,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 57519 63541"],[46.63551503299752,32.45452743455385,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 58249 64806"],[46.63917307811406,32.500808927569025,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 61794 65189"],[46.649867267903524,32.618495714840755,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 70807 66327"],[46.656037220227894,32.62284379323501,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 71143 67011"],[46.656948004146656,32.62891504055368,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 71608 67110"],[46.6538044423182,32.630831592948155,"військова техніка СОУ / бронетехніка СОУ в районі н.п. АНТОНІВКА (","36T VS 71753 66760"],[46.6627731646336,32.49757223127877,"вогневі позиції СОУ в районі н.п. КОМИШАНИ (","36T VS 61563 67813"],[46.74361251158922,32.469448396642626,"вогневі позиції СОУ в районі н.п. КОМИШАНИ (","36T VS 59472 76810"],[46.65458897729599,32.57671853405952,"вогневі позиції СОУ в районі н.п. КОМИШАНИ (","36T VS 67613 66868"],[47.34842378262864,33.82833618434281,"вогневі позиції СОУ в районі н.п. КОМИШАНИ (","36T WT 62564 44217"],[46.675888624542274,32.688261884623124,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T VS 76157 69195"],[46.681003848934736,32.72853225862991,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T VS 79239 69752"],[46.832181527398056,33.39743910618351,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T WS 30310 86592"],[46.62610632921846,32.44242143080823,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T VS 57315 63767"],[46.888290922907686,33.09727779109968,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T WS 07411 92755"],[46.75846540095073,32.78623103877922,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T VS 83675 78346"],[46.75369482485944,32.816770674095224,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T VS 86006 77810"],[46.59219212504434,32.46408735124555,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T VS 58948 59987"],[46.580783197023415,32.464591330041735,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T VS 58978 58719"],[46.590308561051856,32.465437430243504,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T VS 59050 59777"],[46.59109068001576,32.46912409015746,"ПТД особового складу СОУ в районі н.п. АНТОНІВКА (","36T VS 59333 59862"]];
+var markersList = [];
+function renderMarkers() {
+    markersList.forEach(function(mObj){map.removeLayer(mObj.marker);});
+    markersList=[];
+    let listContainer=document.getElementById('pointsListContainer');
+    listContainer.innerHTML='';
+    rawData.forEach(function(item,index){
+        var marker=L.marker([item[0],item[1]],{icon:custom3DPin}).addTo(map);
+        var popupContent='<div class="popup-content"><b>'+escapeHtml(item[2])+'</b><br>Координати: '+escapeHtml(item[3])+'<br><button class="popup-zoom-btn" onclick="selectPointOnly('+index+')">Вибрати</button></div>';
+        marker.bindPopup(popupContent);
+        markersList.push({index:index,marker:marker});
+        let div=document.createElement('div');
+        div.className='point-item';
+        div.innerHTML='<input type="checkbox" data-index="'+index+'"><span title="'+escapeHtml(item[2])+'">'+(index+1)+'. '+escapeHtml(item[2])+' ('+escapeHtml(item[3])+')</span>';
+        div.querySelector('span').onclick=function(){marker.openPopup();};
+        listContainer.appendChild(div);
+    });
+}
+function escapeHtml(value) {
+    return String(value).replace(/[&<>'"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c];});
+}
+function selectPointOnly(index) {
+    let checkbox=document.querySelector('.points-list input[type="checkbox"][data-index="'+index+'"]');
+    if(checkbox) checkbox.checked=true;
+    map.closePopup();
+}
+function togglePanel() {
+    let panel=document.getElementById('controlPanel');
+    let lockBtn=document.getElementById('lockBtn');
+    if(!isAuthenticated) {
+        let decoded=JSON.parse(atob(encodedConfig));
+        let inputPass=prompt('Введіть пароль адміністратора для керування точками:');
+        if(inputPass===null) return;
+        if(inputPass!==decoded.pass) {alert('Невірний пароль!');return;}
+        isAuthenticated=true;
+        lockBtn.innerHTML='🔓';
+    }
+    panel.classList.toggle('active');
+}
+function toggleSelectAll() {
+    let checkboxes=document.querySelectorAll('.points-list input[type="checkbox"]');
+    let allChecked=Array.from(checkboxes).every(function(cb){return cb.checked;});
+    checkboxes.forEach(function(cb){cb.checked=!allChecked;});
+}
+async function deleteSelectedPoints() {
+    let checkboxes=document.querySelectorAll('.points-list input[type="checkbox"]:checked');
+    if(checkboxes.length===0) {alert('Виберіть хоча б одну точку для видалення!');return;}
+    if(!confirm('Видалити вибрані точки ('+checkboxes.length+' шт.) назавжди для всіх користувачів?')) return;
+    let decoded=JSON.parse(atob(encodedConfig));
+    let indicesToRemove=Array.from(checkboxes).map(function(cb){return parseInt(cb.getAttribute('data-index'));}).sort(function(a,b){return b-a;});
+    indicesToRemove.forEach(function(index){rawData.splice(index,1);});
+    renderMarkers();
+    let apiUrl='https://api.github.com/repos/'+decoded.repo+'/contents/'+decoded.fileName;
+    let delBtn=document.querySelector('.delete-selected-btn');
+    try {
+        delBtn.innerText='⏳ Збереження на GitHub...';
+        delBtn.disabled=true;
+        let getRes=await fetch(apiUrl,{headers:{'Authorization':'Bearer '+decoded.token,'Accept':'application/vnd.github+json'}});
+        let fileData=await getRes.json();
+        if(!getRes.ok) throw new Error(fileData.message || 'Не вдалося отримати файл з GitHub');
+        let sha=fileData.sha;
+        let currentHtml=new TextDecoder().decode(Uint8Array.from(atob(fileData.content.replace(/\n/g,'')),function(c){return c.charCodeAt(0);}));
+        let oldRawDataMatch=currentHtml.match(/var rawData = ([\s\S]*?);\n/);
+        if(!oldRawDataMatch) throw new Error('Не знайдено rawData у HTML.');
+        let newRawDataStr='var rawData = '+JSON.stringify(rawData)+';\n';
+        let updatedHtml=currentHtml.replace(oldRawDataMatch[0],newRawDataStr);
+        let encodedContent=btoa(unescape(encodeURIComponent(updatedHtml)));
+        let putRes=await fetch(apiUrl,{method:'PUT',headers:{'Authorization':'Bearer '+decoded.token,'Accept':'application/vnd.github+json','Content-Type':'application/json'},body:JSON.stringify({message:'Delete markers and update map',content:encodedContent,sha:sha})});
+        let putJson=await putRes.json();
+        if(!putRes.ok) throw new Error(putJson.message || putRes.statusText);
+        for(let sec=60;sec>0;sec--){delBtn.innerText='⏳ Публікація ('+sec+'с)';await new Promise(function(r){setTimeout(r,1000);});}
+        location.reload();
+    } catch(err) {
+        alert('Помилка збереження: '+err.message);
+        delBtn.innerText='🗑️ Видалити вибрані';
+        delBtn.disabled=false;
+    }
+}
+renderMarkers();
+</script>
+</body>
+</html>
